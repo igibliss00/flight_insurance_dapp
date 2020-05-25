@@ -29,11 +29,11 @@ contract FlightSuretyData {
     address[] multiSig = new address[](0);
     address[] fundedAirlines = new address[](0);
 
-    mapping(address => Airline) public airlines;
-    mapping(address => uint8) authorizedCaller; // contract address => 1
-    mapping(address => Insurance) public insurance; // beneficiary => Insurance
-    mapping(address => uint256) public pendingCredit;
-    mapping(address => uint256) public funds;
+    mapping(address => Airline) private airlines;
+    mapping(address => bool) private authorizedCaller; // contract address => 1
+    mapping(address => Insurance) private insurance; // beneficiary => Insurance
+    mapping(address => uint256) private pendingCredit;
+    mapping(address => uint256) private funds;
 
     /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
@@ -57,6 +57,7 @@ contract FlightSuretyData {
      */
     constructor() public {
         contractOwner = msg.sender;
+        authorizedCaller[msg.sender] = true;
     }
 
     /********************************************************************************************/
@@ -86,7 +87,7 @@ contract FlightSuretyData {
 
     modifier authorizedCallerExists(address addr) {
         require(
-            authorizedCaller[addr] != 1,
+            authorizedCaller[addr] != true,
             "Authorized caller already exists"
         );
         _;
@@ -94,7 +95,7 @@ contract FlightSuretyData {
 
     modifier authorizedCallerDoesntExists(address addr) {
         require(
-            authorizedCaller[addr] == 1,
+            authorizedCaller[addr] == true,
             "The contract is not recognized as an authorized caller that already exists"
         );
         _;
@@ -110,8 +111,8 @@ contract FlightSuretyData {
      * @return A bool that is the current operating status
      */
 
-    function isOperational() public pure returns (bool) {
-        return true;
+    function isOperational() public view returns (bool) {
+        return operational;
         // return operational;
     }
 
@@ -133,14 +134,11 @@ contract FlightSuretyData {
      * @param addr The account address to be authorized
      */
 
-    function authorizeCaller(address addr)
-        external
-        requireIsOperational
-        requireContractOwner
-        authorizedCallerExists(addr)
-    {
+    function _authorizeCaller(
+        address addr // requireIsOperational // requireContractOwner // authorizedCallerExists(addr)
+    ) external {
         require(addr != address(0), "Must be a valid address");
-        authorizedCaller[addr] = 1;
+        authorizedCaller[addr] = true;
         emit ContractAuthorized(addr);
     }
 
@@ -149,7 +147,7 @@ contract FlightSuretyData {
      * @param addr The account address to be deauthorized
      */
 
-    function deauthorizeCaller(address addr)
+    function _deauthorizeCaller(address addr)
         external
         requireIsOperational
         requireContractOwner
@@ -165,9 +163,14 @@ contract FlightSuretyData {
      * @param addr The address to be checked as an authorized caller
      * @return bool Returns true if the account is an authorized caller, false otherwise
      */
-    function isAuthorizedCaller(address addr) external view returns (bool) {
+    function _isAuthorizedCaller(address addr)
+        external
+        view
+        requireIsOperational
+        returns (bool)
+    {
         require(addr != address(0), "Must be a valid address");
-        return authorizedCaller[addr] == 1;
+        return authorizedCaller[addr] == true;
     }
 
     /**
@@ -177,7 +180,7 @@ contract FlightSuretyData {
      * @return bool Returns true if the account exists, false if it doesn't.
      */
 
-    function isAirline(address addr)
+    function _isAirline(address addr)
         external
         view
         requireIsOperational
@@ -203,7 +206,6 @@ contract FlightSuretyData {
         require(!airlines[addr].isRegistered, "Airline is already registered");
 
         // isFunded is only true after seeding the initial 10 ether
-        // airlines[addr] = Airline(name, false, true);
         airlines[addr] = Airline({
             name: name,
             isFunded: false,
@@ -353,7 +355,7 @@ contract FlightSuretyData {
         payable
         requireIsOperational
     {
-        require(msg.value == 10 ether, "The fund must be 10 ether");
+        require(amount == 10 ether, "The fund must be 10 ether");
         require(
             airlines[addr].isFunded == false,
             "The airline has already funded"
@@ -363,6 +365,15 @@ contract FlightSuretyData {
         airlines[addr].isFunded = true;
         fundedAirlines.push(addr);
         emit FundedByAirline(addr, amount);
+    }
+
+    /**
+     * @dev Testing purpose only. This is to prevent "airline has already funded" error
+     */
+    function refund(address addr) external {
+        funds[addr] = 0;
+        airlines[addr].isFunded = false;
+        delete fundedAirlines;
     }
 
     /**

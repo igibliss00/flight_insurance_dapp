@@ -29,9 +29,11 @@ contract FlightSuretyApp {
     uint8 private constant STATUS_CODE_LATE_OTHER = 50;
 
     address private contractOwner; // Account used to deploy contract
+    bool private operational = true; // Blocks all state changes throughout the contract if false
     uint8 constant AIRLINE_THRESHOLD = 4;
     uint256 constant MIN_REQ_DEPOSIT = 10 ether;
     FlightSuretyData flightSuretyData;
+    address[] votedAirlines = new address[](0);
 
     struct Flight {
         bool isRegistered;
@@ -40,7 +42,6 @@ contract FlightSuretyApp {
         address airline;
     }
     mapping(bytes32 => Flight) private flights;
-    mapping(address => uint8) private numOfVotes;
 
     /********************************************************************************************/
     /*                                       FUNCTION MODIFIERS                                 */
@@ -56,7 +57,7 @@ contract FlightSuretyApp {
      */
     modifier requireIsOperational() {
         // Modify to call data contract's status
-        require(true, "Contract is currently not operational");
+        require(operational, "Contract is currently not operational");
         _; // All modifiers require an "_" which indicates where the function body will be added
     }
 
@@ -97,18 +98,25 @@ contract FlightSuretyApp {
     /*                                       UTILITY FUNCTIONS                                  */
     /********************************************************************************************/
 
-    function isOperational() public pure returns (bool) {
-        return true; // Modify to call data contract's status
+    /**
+     * @dev Get operating status of contract
+     * @return A bool that is the current operating status
+     */
+    function isOperational() public view returns (bool) {
+        return operational;
+    }
+
+    /**
+     * @dev Sets contract operations on/off
+     * When operational mode is disabled, all write transactions except for this one will fail
+     */
+    function setOperatingStatus(bool mode) external requireContractOwner {
+        operational = mode;
     }
 
     /********************************************************************************************/
     /*                                     SMART CONTRACT FUNCTIONS                             */
     /********************************************************************************************/
-
-    /**
-     * @dev Get the number of funded airlines
-     * @return returns the number of funded airlines
-     */
 
     // function getNumOfFundedAirlines()
     //     external
@@ -121,9 +129,21 @@ contract FlightSuretyApp {
     //     return fundedAirlines.length;
     // }
 
+    function authorizeCaller(address addr) public requireIsOperational {
+        flightSuretyData._authorizeCaller(addr);
+    }
+
+    function deauthorizeCaller(address addr) public requireIsOperational {
+        flightSuretyData._deauthorizeCaller(addr);
+    }
+
     /**
-     * @dev Add an airline to the registration queue
-     *
+     * @dev Add an airline to the registration queue.
+     * @param airline The address of the airline to be registered after the 4th initial airlines.
+     * The first 4 will have to be authorized by the contract owner and will be registered using msg.sender.
+     * The airlines starting from the 5th will be voted on by the first 4.
+     * @param name The name of the airline to be registered to the Airline struct in FlightSuretyData. The first 4 have to register the name as well.
+     * @return Returns the status of the registration with true or false.
      */
 
     function registerAirline(address airline, string memory name)
@@ -134,18 +154,68 @@ contract FlightSuretyApp {
     {
         require(airline != address(0), "Must be a valid address");
         bool isSuccessful = false;
-        address[] memory fundedAirlines = flightSuretyData
-            ._getNumOfFundedAirlines();
-        if (fundedAirlines.length < AIRLINE_THRESHOLD) {
-            isSuccessful = flightSuretyData._registerAirline(airline, name);
+        bool isAuthorized = flightSuretyData._isAuthorizedCaller(msg.sender);
+        if (isAuthorized) {
+            isSuccessful = flightSuretyData._registerAirline(msg.sender, name);
+            return isAuthorized;
         } else {
-            numOfVotes[msg.sender]++;
-            // if (numOfVotes[msg.sender] >= fundedAirlines.length.div(2)) {
-            //     isSuccessful = flightSuretyData._registerAirline(airline, name);
-            // }
+            return isAuthorized;
         }
-        return isSuccessful;
+        // return isSuccessful;
     }
+
+    // function test(address addr) public returns (bool) {
+    //     // bool isAuthorized = false;
+    //     flightSuretyData._authorizeCaller(addr);
+    //     return flightSuretyData._isAuthorizedCaller(addr);
+    //     // return isAuthorized;
+    // }
+
+    function test(address addr, string memory name) public returns (bool) {
+        return flightSuretyData._registerAirline(addr, name);
+        // return flightSuretyData._isAirline(addr);
+    }
+
+    // function registerAirline(address airline, string memory name)
+    //     public
+    //     requireIsOperational
+    //     requireFundDeposited
+    //     returns (bool)
+    // {
+    //     require(airline != address(0), "Must be a valid address");
+    //     bool isSuccessful = false;
+    //     address[] memory fundedAirlines = flightSuretyData
+    //         ._getNumOfFundedAirlines();
+    //     if (fundedAirlines.length < AIRLINE_THRESHOLD) {
+    //         bool isAuthorized = flightSuretyData._isAuthorizedCaller(
+    //             msg.sender
+    //         );
+    //         if (isAuthorized) {
+    //             isSuccessful = flightSuretyData._registerAirline(
+    //                 msg.sender,
+    //                 name
+    //             );
+    //         } else {
+    //             return isSuccessful;
+    //         }
+    //     } else {
+    //         bool isAuthorized = flightSuretyData._isAuthorizedCaller(
+    //             msg.sender
+    //         );
+    //         if (isAuthorized) {
+    //             votedAirlines.push(msg.sender);
+    //             if (votedAirlines.length >= fundedAirlines.length.div(2)) {
+    //                 isSuccessful = flightSuretyData._registerAirline(
+    //                     airline,
+    //                     name
+    //                 );
+    //             }
+    //         } else {
+    //             return isSuccessful;
+    //         }
+    //     }
+    //     return isSuccessful;
+    // }
 
     /**
      * @dev Funds provided by the airlines
@@ -158,12 +228,7 @@ contract FlightSuretyApp {
      * @dev Checks whether the fund by the airline is properly loaded
      * @return The balance of the fund
      */
-    function airlineFundingTest()
-        public
-        view
-        requireIsOperational
-        returns (uint256)
-    {
+    function checkFunds() public view requireIsOperational returns (uint256) {
         uint256 amount = flightSuretyData._checkFunds(msg.sender);
         return amount;
     }
