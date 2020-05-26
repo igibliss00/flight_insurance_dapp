@@ -27,10 +27,17 @@ contract FlightSuretyData {
         bool isValue; // checks for the existence of the insurance
     }
 
+    struct Flight {
+        bool isRegistered;
+        uint8 statusCode;
+        uint256 updatedTimestamp;
+        address airline;
+    }
+
     address[] multiSig;
-    // address[] multiSig = new address[](0);
     address[] fundedAirlines = new address[](0);
 
+    mapping(bytes32 => Flight) public flights;
     mapping(address => Airline) private airlines;
     mapping(address => bool) private authorizedCaller; // contract address => 1
     mapping(address => Insurance) private insurance; // beneficiary => Insurance
@@ -48,6 +55,7 @@ contract FlightSuretyData {
     event CreditIssuedToInsuree(address beneficiary, uint256 creditAmount);
     event InsurancePayoutPaid(address beneficiary, uint256 amount);
     event FundedByAirline(address airline, uint256 amount);
+    event FlightRegistered(bytes32 flightKey);
 
     /********************************************************************************************/
     /*                                       CONSTRUCTOR                                        */
@@ -128,7 +136,7 @@ contract FlightSuretyData {
     }
 
     /********************************************************************************************/
-    /*                                     SMART CONTRACT FUNCTIONS                             */
+    /*                                     SMART CONTRACT FUNCTIONS FOR AIRLINE                 */
     /********************************************************************************************/
     /**
      * @dev Registers an account to be an authorized caller to authorizedCaller mapping
@@ -417,19 +425,56 @@ contract FlightSuretyData {
         return fundedAirlines;
     }
 
-    function getFlightKey(
+    function _registerFlight(
+        uint8 statusCode,
+        uint256 updatedTimestamp,
         address airline,
-        string memory flight,
-        uint256 timestamp
-    ) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(airline, flight, timestamp));
+        bytes32 flightKey
+    ) external requireIsOperational {
+        Flight memory newFlight = Flight(
+            true,
+            statusCode,
+            updatedTimestamp,
+            airline
+        );
+        flights[flightKey] = newFlight;
+
+        emit FlightRegistered(flightKey);
     }
 
-    /**
-     * @dev Fallback function for funding smart contract.
-     *
-     */
-    // fallback() external payable {
-    //     fund();
-    // }
+    function _isFlightRegistered(bytes32 flightKey)
+        external
+        view
+        requireIsOperational
+        returns (bool)
+    {
+        return flights[flightKey].isRegistered;
+    }
+
+    function _getRegisteredFlight(bytes32 flightKey)
+        public
+        view
+        requireIsOperational
+        returns (
+            bool,
+            uint8,
+            uint256,
+            address
+        )
+    {
+        return (
+            flights[flightKey].isRegistered,
+            flights[flightKey].statusCode,
+            flights[flightKey].updatedTimestamp,
+            flights[flightKey].airline
+        );
+    }
+
+    function setFlightStatus(bytes32 flightKey, uint8 statusCode)
+        external
+        returns (uint8)
+    {
+        flights[flightKey].statusCode = statusCode;
+        return flights[flightKey].statusCode;
+    }
 }
