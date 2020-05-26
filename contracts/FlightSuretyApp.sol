@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.6.0 <0.7.0;
+// pragma solidity ^0.5.8;
 
 // It's important to avoid vulnerabilities due to numeric overflow bugs
 // OpenZeppelin's SafeMath library, when used correctly, protects agains such bugs
@@ -70,6 +71,17 @@ contract FlightSuretyApp {
     }
 
     /**
+     * @dev Modifier to check if the caller is authorized
+     */
+    modifier requireAuthorized() {
+        require(
+            flightSuretyData._isAuthorizedCaller(msg.sender) == true,
+            "The caller is not authorized"
+        );
+        _;
+    }
+
+    /**
      * @dev Modifier that requires the airline to have made the 10 ether deposit to be able to register other airlines
      */
     modifier requireFundDeposited() {
@@ -89,9 +101,10 @@ contract FlightSuretyApp {
      * @dev Contract constructor
      *
      */
-    constructor() public {
+    constructor(address dataContract) public {
         contractOwner = msg.sender;
-        flightSuretyData = new FlightSuretyData();
+        flightSuretyData = FlightSuretyData(dataContract);
+        // flightSuretyData = new FlightSuretyData();
     }
 
     /********************************************************************************************/
@@ -118,16 +131,16 @@ contract FlightSuretyApp {
     /*                                     SMART CONTRACT FUNCTIONS                             */
     /********************************************************************************************/
 
-    // function getNumOfFundedAirlines()
-    //     external
-    //     view
-    //     requireIsOperational
-    //     returns (uint256)
-    // {
-    //     address[] memory fundedAirlines = flightSuretyData
-    //         ._getNumOfFundedAirlines();
-    //     return fundedAirlines.length;
-    // }
+    function getNumOfFundedAirlines()
+        external
+        view
+        requireIsOperational
+        returns (uint256)
+    {
+        address[] memory fundedAirlines = flightSuretyData
+            ._getNumOfFundedAirlines();
+        return fundedAirlines.length;
+    }
 
     function authorizeCaller(address addr) public requireIsOperational {
         flightSuretyData._authorizeCaller(addr);
@@ -137,44 +150,14 @@ contract FlightSuretyApp {
         flightSuretyData._deauthorizeCaller(addr);
     }
 
-    /**
-     * @dev Add an airline to the registration queue.
-     * @param airline The address of the airline to be registered after the 4th initial airlines.
-     * The first 4 will have to be authorized by the contract owner and will be registered using msg.sender.
-     * The airlines starting from the 5th will be voted on by the first 4.
-     * @param name The name of the airline to be registered to the Airline struct in FlightSuretyData. The first 4 have to register the name as well.
-     * @return Returns the status of the registration with true or false.
-     */
-
-    function registerAirline(address airline, string memory name)
-        public
-        requireIsOperational
-        requireFundDeposited
-        returns (bool)
-    {
-        require(airline != address(0), "Must be a valid address");
-        bool isSuccessful = false;
-        bool isAuthorized = flightSuretyData._isAuthorizedCaller(msg.sender);
-        if (isAuthorized) {
-            isSuccessful = flightSuretyData._registerAirline(msg.sender, name);
-            return isAuthorized;
-        } else {
-            return isAuthorized;
-        }
-        // return isSuccessful;
-    }
-
-    // function test(address addr) public returns (bool) {
-    //     // bool isAuthorized = false;
-    //     flightSuretyData._authorizeCaller(addr);
-    //     return flightSuretyData._isAuthorizedCaller(addr);
-    //     // return isAuthorized;
-    // }
-
-    function test(address addr, string memory name) public returns (bool) {
-        return flightSuretyData._registerAirline(addr, name);
-        // return flightSuretyData._isAirline(addr);
-    }
+    // /**
+    //  * @dev Add an airline to the registration queue.
+    //  * @param airline The address of the airline to be registered after the 4th initial airlines.
+    //  * The first 4 will have to be authorized by the contract owner and will be registered using msg.sender.
+    //  * The airlines starting from the 5th will be voted on by the first 4.
+    //  * @param name The name of the airline to be registered to the Airline struct in FlightSuretyData. The first 4 have to register the name as well.
+    //  * @return Returns the status of the registration with true or false.
+    //  */
 
     // function registerAirline(address airline, string memory name)
     //     public
@@ -184,38 +167,50 @@ contract FlightSuretyApp {
     // {
     //     require(airline != address(0), "Must be a valid address");
     //     bool isSuccessful = false;
-    //     address[] memory fundedAirlines = flightSuretyData
-    //         ._getNumOfFundedAirlines();
-    //     if (fundedAirlines.length < AIRLINE_THRESHOLD) {
-    //         bool isAuthorized = flightSuretyData._isAuthorizedCaller(
-    //             msg.sender
-    //         );
-    //         if (isAuthorized) {
-    //             isSuccessful = flightSuretyData._registerAirline(
-    //                 msg.sender,
-    //                 name
-    //             );
-    //         } else {
-    //             return isSuccessful;
-    //         }
+    //     bool isAuthorized = flightSuretyData._isAuthorizedCaller(msg.sender);
+    //     if (isAuthorized) {
+    //         isSuccessful = flightSuretyData._registerAirline(msg.sender, name);
+    //         return isAuthorized;
     //     } else {
-    //         bool isAuthorized = flightSuretyData._isAuthorizedCaller(
-    //             msg.sender
-    //         );
-    //         if (isAuthorized) {
-    //             votedAirlines.push(msg.sender);
-    //             if (votedAirlines.length >= fundedAirlines.length.div(2)) {
-    //                 isSuccessful = flightSuretyData._registerAirline(
-    //                     airline,
-    //                     name
-    //                 );
-    //             }
-    //         } else {
-    //             return isSuccessful;
-    //         }
+    //         return isAuthorized;
     //     }
-    //     return isSuccessful;
+    //     // return isSuccessful;
     // }
+
+    // function test(address addr) public returns (bool) {
+    //     flightSuretyData._authorizeCaller(addr);
+    //     return flightSuretyData._isAuthorizedCaller(addr);
+    // }
+
+    // function test(address addr, string memory name) public returns (bool) {
+    //     return flightSuretyData._registerAirline(addr, name);
+    //     // return flightSuretyData.isOperational();
+    // }
+
+    function registerAirline(address airline, string memory name)
+        public
+        requireIsOperational
+        requireFundDeposited
+        requireAuthorized
+        returns (bool)
+    {
+        require(airline != address(0), "Must be a valid address");
+        bool isSuccessful = false;
+        uint256 numOfRegisteredAirlines = flightSuretyData._getMultiSigLength();
+        if (numOfRegisteredAirlines < AIRLINE_THRESHOLD) {
+            isSuccessful = flightSuretyData._registerAirline(airline, name);
+            return isSuccessful;
+        } else {
+            bool finalReg = false;
+            votedAirlines.push(msg.sender);
+            if (votedAirlines.length >= numOfRegisteredAirlines.div(2)) {
+                finalReg = flightSuretyData._registerAirline(airline, name);
+                return finalReg;
+            } else {
+                return finalReg;
+            }
+        }
+    }
 
     /**
      * @dev Funds provided by the airlines
@@ -438,6 +433,14 @@ contract FlightSuretyApp {
     // endregion
 }
 
-// abstract contract FlightSuretyData {
+// contract FlightSuretyData {
+//     function _authorizeCaller(address addr) external;
+
+//     function _deauthorizeCaller(address addr) external;
+
+//     function _isAuthorizedCaller(address addr) external returns (bool);
+
 //     function _registerAirline(address addr, string memory name) public;
+
+//     function _checkFunds(address addr) external view returns (uint256);
 // }

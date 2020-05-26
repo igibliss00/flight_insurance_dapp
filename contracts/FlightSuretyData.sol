@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.6.0 <0.7.0;
+// pragma solidity ^0.5.8;
 
 import "../node_modules/@openzeppelin/contracts/math/SafeMath.sol";
 
@@ -26,7 +27,8 @@ contract FlightSuretyData {
         bool isValue; // checks for the existence of the insurance
     }
 
-    address[] multiSig = new address[](0);
+    address[] multiSig;
+    // address[] multiSig = new address[](0);
     address[] fundedAirlines = new address[](0);
 
     mapping(address => Airline) private airlines;
@@ -93,10 +95,10 @@ contract FlightSuretyData {
         _;
     }
 
-    modifier authorizedCallerDoesntExists(address addr) {
+    modifier requireAuthorized() {
         require(
-            authorizedCaller[addr] == true,
-            "The contract is not recognized as an authorized caller that already exists"
+            authorizedCaller[msg.sender] == true,
+            "The caller is not authorized"
         );
         _;
     }
@@ -113,7 +115,6 @@ contract FlightSuretyData {
 
     function isOperational() public view returns (bool) {
         return operational;
-        // return operational;
     }
 
     /**
@@ -134,9 +135,13 @@ contract FlightSuretyData {
      * @param addr The account address to be authorized
      */
 
-    function _authorizeCaller(
-        address addr // requireIsOperational // requireContractOwner // authorizedCallerExists(addr)
-    ) external {
+    function _authorizeCaller(address addr)
+        external
+        requireIsOperational
+        // requireContractOwner
+        requireAuthorized
+        authorizedCallerExists(addr)
+    {
         require(addr != address(0), "Must be a valid address");
         authorizedCaller[addr] = true;
         emit ContractAuthorized(addr);
@@ -150,8 +155,8 @@ contract FlightSuretyData {
     function _deauthorizeCaller(address addr)
         external
         requireIsOperational
-        requireContractOwner
-        authorizedCallerDoesntExists(addr)
+        // requireContractOwner
+        requireAuthorized
     {
         require(addr != address(0), "Must be a valid address");
         delete authorizedCaller[addr];
@@ -193,6 +198,7 @@ contract FlightSuretyData {
     /**
      * @dev Add an airline to the registration queue
      *      Can only be called from FlightSuretyApp contract
+     *      An airline can only reigster if it has already provided the fund
      * @param addr The address of the new airline to be registered
      * @param name The name of the new airline to be registered
      * @return bool
@@ -201,6 +207,7 @@ contract FlightSuretyData {
     function _registerAirline(address addr, string memory name)
         public
         requireIsOperational
+        requireAuthorized
         returns (bool)
     {
         require(!airlines[addr].isRegistered, "Airline is already registered");
@@ -208,7 +215,7 @@ contract FlightSuretyData {
         // isFunded is only true after seeding the initial 10 ether
         airlines[addr] = Airline({
             name: name,
-            isFunded: false,
+            isFunded: true,
             isRegistered: true
         });
 
@@ -368,12 +375,14 @@ contract FlightSuretyData {
     }
 
     /**
-     * @dev Testing purpose only. This is to prevent "airline has already funded" error
+     * @dev for testing purpose only. This is to prevent "airline has already funded" and "airline is already authorized" error
      */
     function refund(address addr) external {
         funds[addr] = 0;
         airlines[addr].isFunded = false;
         delete fundedAirlines;
+        delete authorizedCaller[addr];
+        delete multiSig;
     }
 
     /**

@@ -6,7 +6,8 @@ contract("Flight Surety Tests", async (accounts) => {
   before("setup contract", async () => {
     config = await Test.Config(accounts);
     await config.flightSuretyData._authorizeCaller(
-      config.flightSuretyApp.address
+      config.flightSuretyApp.address,
+      { from: config.owner }
     );
   });
 
@@ -88,33 +89,33 @@ contract("Flight Surety Tests", async (accounts) => {
     );
   });
 
-  // it("(airline) can return a correct number of funded airlines", async () => {
-  //   let airline = accounts[6];
-  //   let initialFund = new BigNumber(web3.utils.toWei("10", "ether"));
-  //   let numOfAirlines;
-  //   try {
-  //     await config.flightSuretyApp.airlineFunding({
-  //       from: airline,
-  //       value: initialFund,
-  //       gasPrice: 0,
-  //     });
-  //     await config.flightSuretyApp.airlineFunding({
-  //       from: accounts[3],
-  //       value: initialFund,
-  //       gasPrice: 0,
-  //     });
+  it("(airline) can return a correct number of funded airlines", async () => {
+    let airline = accounts[6];
+    let initialFund = new BigNumber(web3.utils.toWei("10", "ether"));
+    let numOfAirlines;
+    try {
+      // clean slate for testing
+      for (let i = 1; i < 5; i++) {
+        await config.flightSuretyData.refund(accounts[i]);
+      }
 
-  //     //   numOfAirlines = await config.flightSuretyApp.getNumOfFundedAirlines();
-  //   } catch (e) {
-  //     console.log(e.message);
-  //   }
+      await config.flightSuretyApp.airlineFunding({
+        from: airline,
+        value: initialFund,
+        gasPrice: 0,
+      });
 
-  //   assert.equal(
-  //     numOfAirlines,
-  //     1,
-  //     "The number of funded airlines is incorrect"
-  //   );
-  // });
+      numOfAirlines = await config.flightSuretyApp.getNumOfFundedAirlines();
+    } catch (e) {
+      console.log(e.message);
+    }
+
+    assert.equal(
+      numOfAirlines,
+      1,
+      "The number of funded airlines is incorrect"
+    );
+  });
 
   it("(airline) can check that the airline pays the fund properly", async () => {
     let airline = accounts[9];
@@ -144,17 +145,18 @@ contract("Flight Surety Tests", async (accounts) => {
 
   it("(airline) can deauthorize a contract using deauthorizeCaller()", async () => {
     // ARRANGE
-    let owner = config.owner;
+    let owner = accounts[0];
+    // let owner = config.flightSuretyApp.address;
     let airline = accounts[5];
     let eventEmitted = false;
 
     // ACT
     try {
-      await config.flightSuretyApp.authorizeCaller(airline, {
+      await config.flightSuretyApp.authorizeCaller.call(airline, {
         from: owner,
         gasPrice: 0,
       });
-      await config.flightSuretyApp.deauthorizeCaller(airline, {
+      await config.flightSuretyApp.deauthorizeCaller.call(airline, {
         from: owner,
         gasPrice: 0,
       });
@@ -189,12 +191,12 @@ contract("Flight Surety Tests", async (accounts) => {
   // });
 
   it("(airline) can check if a contract is authorized or not", async () => {
-    let contractCaller = config.owner;
+    let owner = config.owner;
     let isAuthorized = false;
     try {
-      isAuthorized = await config.flightSuretyData._isAuthorizedCaller(
-        contractCaller
-      );
+      isAuthorized = await config.flightSuretyData._isAuthorizedCaller(owner, {
+        from: owner,
+      });
     } catch (e) {
       console.log(e.message);
     }
@@ -206,69 +208,99 @@ contract("Flight Surety Tests", async (accounts) => {
   });
 
   it("(airline, multiparty) can register 4 airlines and vote the 5th airline in", async () => {
-    let newAccount = accounts[7];
     let owner = config.owner;
     let initialFund = new BigNumber(web3.utils.toWei("10", "ether"));
     let registerResultForOwner;
     let resultArr = [];
 
     for (let i = 1; i < 5; i++) {
-      // console.log({ i });
-      //   // delete all the accounts from the funded list to avoid "The airline has already funded" requirement
-      //   await config.flightSuretyData.refund(accounts[i]);
+      // delete all the accounts from the funded list to avoid "The airline has already funded" requirement
+      await config.flightSuretyData.refund(accounts[i]);
     }
 
     // // The contract owner registers itself first. However, no need to authorize.
-    // await config.flightSuretyApp.airlineFunding({
-    //   from: owner,
-    //   value: initialFund,
-    //   // gasPrice: 0,
-    // });
+    await config.flightSuretyApp.airlineFunding({
+      from: owner,
+      value: initialFund,
+      gasPrice: 0,
+    });
 
-    // registerResultForOwner = await config.flightSuretyApp.registerAirline(
-    //   owner,
-    //   "First airline",
-    //   {
-    //     from: owner,
-    //     // gasPrice: 0,
-    //   }
-    // );
-    // await config.flightSuretyData._authorizeCaller(newAccount, { from: owner });
-    // const result = await config.flightSuretyData._isAuthorizedCaller(
-    //   newAccount
-    // );
-    try {
-      const result = await config.flightSuretyApp.test(newAccount, "Yes");
-      console.log(result == true);
-    } catch {
-      throw new Error(error);
+    registerResultForOwner = await config.flightSuretyApp.registerAirline.call(
+      owner,
+      "First airline",
+      {
+        from: owner,
+        gasPrice: 0,
+      }
+    );
+
+    // first 4 airlines including the contract owner
+    for (let i = 1; i < 4; i++) {
+      await config.flightSuretyData._authorizeCaller(accounts[i], {
+        from: owner,
+      });
+      const isAuthorized = await config.flightSuretyData._isAuthorizedCaller(
+        accounts[i]
+      );
+      console.log("airline authorized", isAuthorized == true);
+      // the airlines have to first pay the 10 ether deposit to pass the requireFundDeposited modifier in FlightSuretyApp
+      await config.flightSuretyApp.airlineFunding({
+        from: accounts[i],
+        value: initialFund,
+        gasPrice: 0,
+      });
+      // register
+      const isRegistered = await config.flightSuretyApp.registerAirline.call(
+        accounts[i],
+        `airline${i}`,
+        {
+          from: owner,
+          gasPrice: 0,
+        }
+      );
+
+      const multiSig = await config.flightSuretyData._getMultiSigLength();
+      console.log("0", multiSig == 0);
+      console.log("1", multiSig == 1);
+      console.log("2", multiSig == 2);
+
+      // the array that shows how many successful airline registrations out of the first 3
+      resultArr.push(isRegistered);
+      console.log({ resultArr });
     }
 
+    await config.flightSuretyApp.airlineFunding({
+      from: accounts[4],
+      value: initialFund,
+      gasPrice: 0,
+    });
+
+    for (let i = 0; i < 4; i++) {
+      const isRegistered = await config.flightSuretyApp.registerAirline.call(
+        accounts[4],
+        "The 5th airline",
+        {
+          from: accounts[i],
+        }
+      );
+      let finalResultArr = [];
+      finalResultArr.push(isRegistered);
+      console.log({ finalResultArr });
+    }
+
+    // try {
+    //   const result = await config.flightSuretyApp.test.call(newAccount, {
+    //     from: owner,
+    //   });
+    //   console.log(result === true);
+    // } catch (e) {
+    //   console.log(e.message);
+    // }
+    // const result = await config.flightSuretyApp.test(newAccount);
+    // console.log(result === true);
     // for (let i = 1; i < 5; i++) {
     //   console.log({ i });
 
-    //   // the contract owner authorizes the airlines
-    //   await config.flightSuretyApp.authorizeCaller(accounts[i], {
-    //     from: owner,
-    //     gasPrice: 0,
-    //   });
-    //   // the airlines have to first pay the 10 ether deposit to pass the requireFundDeposited modifier in FlightSuretyApp
-    //   await config.flightSuretyApp.airlineFunding({
-    //     from: accounts[i],
-    //     value: initialFund,
-    //     gasPrice: 0,
-    //   });
-    //   // register
-    //   const result = await config.flightSuretyApp.registerAirline(
-    //     accounts[i],
-    //     `airline${i}`,
-    //     {
-    //       from: accounts[i],
-    //       gasPrice: 0,
-    //     }
-    //   );
-    //   resultArr.push(result);
-    // }
     // console.log({ registerResultForOwner });
     // console.log(registerResultForOwner == true);
     // assert.isTrue(
@@ -336,6 +368,7 @@ contract("Flight Surety Tests", async (accounts) => {
     let contractCaller = accounts[2];
     let eventEmitted = false;
 
+    await config.flightSuretyData.refund(contractCaller);
     // ACT
     try {
       await config.flightSuretyData._authorizeCaller(contractCaller);
@@ -612,6 +645,7 @@ contract("Flight Surety Tests", async (accounts) => {
     let airline = accounts[2];
     let initialFund = new BigNumber(web3.utils.toWei("10", "ether"));
     let eventEmitted = false;
+    await config.flightSuretyData.refund(airline);
     await config.flightSuretyData.fund(airline, initialFund);
     const retrievedFund = await config.flightSuretyData._checkFunds(airline);
 
